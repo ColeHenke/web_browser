@@ -1,1 +1,1 @@
-A simpole web browser
+A simple web browser
