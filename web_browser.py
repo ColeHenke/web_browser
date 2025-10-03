@@ -55,6 +55,7 @@ class Browser:
     def load(self, url):
         body = url.request()
         self.nodes = HtmlParser(body).parse()
+        style(self.nodes)
         self.document = DocumentLayout(self.nodes)
         self.document.layout()
         self.display_list = []
@@ -373,13 +374,21 @@ class BlockLayout:
 
     def paint(self):
         cmds = []
-        if isinstance(self.node, Element) and self.node.tag == 'pre':
-            x2, y2 = self.x + self.width, self.y + self.height
-            rect = DrawRect(self.x, self.y, x2, y2, 'gray')
-            cmds.append(rect)
+        # if isinstance(self.node, Element) and self.node.tag == 'pre':
+        #     x2, y2 = self.x + self.width, self.y + self.height
+        #     rect = DrawRect(self.x, self.y, x2, y2, 'gray')
+        #     cmds.append(rect)
         if self.layout_mode() == 'inline':
             for x, y, word, font in self.display_list:
                 cmds.append(DrawText(x, y, word, font))
+
+        bgcolor = self.node.style.get("background-color", "transparent")
+        if bgcolor != "transparent":
+            x2, y2 = self.x + self.width, self.y + self.height
+            rect = DrawRect(self.x, self.y, x2, y2, bgcolor)
+            cmds.append(rect)
+        if bgcolor == 'background-color':
+            print(True)
         return cmds
 
 class DocumentLayout:
@@ -423,6 +432,75 @@ class DrawRect:
     def execute(self, scroll, canvas):
         canvas.create_rectangle(self.left, self.top - scroll, self.right, self.bottom - scroll, width=0, fill=self.color)
 
+class CssParser:
+    def __init__(self, s):
+        self.i = 0
+        self.s = s
+
+    def whitespace(self):
+        while self.i < len(self.s) and self.s[self.i].isspace():
+            self.i += 1
+
+    def word(self):
+        start = self.i
+        while self.i < len(self.s):
+            if self.s[self.i].isalnum() or self.s[self.i] in '#-.%':
+                self.i += 1
+            else:
+                break
+        if not (self.i > start):
+            raise Exception('Parsing error')
+        return self.s[start:self.i]
+
+    def literal(self, literal):
+        if not (self.i < len(self.s) and self.s[self.i] == literal):
+            raise Exception("Parsing error")
+        self.i += 1
+
+    def pair(self):
+        prop = self.word()
+        self.whitespace()
+        self.literal(':')
+        self.whitespace()
+        val = self.word()
+        return prop.casefold(), val
+
+    def body(self):
+        pairs = {}
+        while self.i < len(self.s):
+            try:
+                prop, val = self.pair()
+                pairs[prop] = val
+                self.whitespace()
+                self.literal(";")
+                self.whitespace()
+            except Exception:
+                why = self.ignore_until([";"])
+                if why == ";":
+                    self.literal(";")
+                    self.whitespace()
+                else:
+                    break
+        return pairs
+
+    def ignore_until(self, chars):
+        while self.i < len(self.s):
+            if self.s[self.i] in chars:
+                return self.s[self.i]
+            else:
+                self.i += 1
+        return None
+
+def style(node):
+    node.style = {}
+    if isinstance(node, Element) and "style" in node.attributes:
+        pairs = CssParser(node.attributes["style"]).body()
+        for property, value in pairs.items():
+            node.style[property] = value
+
+    for child in node.children:
+        style(child)
+
 def paint_tree(layout_object, display_list):
     display_list.extend(layout_object.paint())
 
@@ -437,5 +515,5 @@ def print_tree(node, indent=0):
 
 if __name__ == '__main__':
     import sys
-    Browser().load(Url(sys.argv[1]))
+    Browser().load(Url('https://browser.engineering/styles.html'))
     tkinter.mainloop()
