@@ -20,22 +20,22 @@ def get_font(size, weight, style):
 
 class ElementList:
     BLOCK_ELEMENTS = [
-        "html", "body", "article", "section", "nav", "aside",
-        "h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header",
-        "footer", "address", "p", "hr", "pre", "blockquote",
-        "ol", "ul", "menu", "li", "dl", "dt", "dd", "figure",
-        "figcaption", "main", "div", "table", "form", "fieldset",
-        "legend", "details", "summary"
+        'html', 'body', 'article', 'section', 'nav', 'aside',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hgroup', 'header',
+        'footer', 'address', 'p', 'hr', 'pre', 'blockquote',
+        'ol', 'ul', 'menu', 'li', 'dl', 'dt', 'dd', 'figure',
+        'figcaption', 'main', 'div', 'table', 'form', 'fieldset',
+        'legend', 'details', 'summary'
     ]
 
     SELF_CLOSING_TAGS = [
-        "area", "base", "br", "col", "embed", "hr", "img", "input",
-        "link", "meta", "param", "source", "track", "wbr",
+        'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
+        'link', 'meta', 'param', 'source', 'track', 'wbr',
     ]
 
     HEAD_TAGS = [
-        "base", "basefont", "bgsound", "noscript",
-        "link", "meta", "title", "style", "script",
+        'base', 'basefont', 'bgsound', 'noscript',
+        'link', 'meta', 'title', 'style', 'script',
     ]
 
 
@@ -53,12 +53,35 @@ class Browser:
         self.draw()
 
     def load(self, url):
+        # make request, receive response - duh
         body = url.request()
         self.nodes = HtmlParser(body).parse()
-        style(self.nodes)
+
+        # load default styles
+        rules = DEFAULT_STYLE_SHEET.copy()
+        style(self.nodes, rules)
+
+        # grab links to external stylesheets
+        links = [node.attributes['href']
+                 for node in tree_to_list(self.nodes, [])
+                 if isinstance(node, Element)
+                 and node.tag == 'link'
+                 and node.attributes.get('rel') == 'stylesheet'
+                 and 'href' in node.attributes]
+
+        # add rules from linked stylesheets to rules list
+        for link in links:
+            style_url = url.resolve(link)
+            try:
+                body = style_url.request()
+            except:
+                continue
+            rules.extend(CssParser(body).parse())
+
         self.document = DocumentLayout(self.nodes)
         self.document.layout()
         self.display_list = []
+
         paint_tree(self.document, self.display_list)
         self.draw()
 
@@ -125,6 +148,24 @@ class Url:
 
         return content
 
+    # convert different kinds of urls to full urls
+    def resolve(self, url):
+        if '://' in url: return Url(url)
+        if not url.startswith('/'):
+            dir, _ = self.path.rsplit('/', 1)
+
+            while url.startswith('../'):
+                _, url = url.split('/', 1)
+                if '/' in dir:
+                    dir, _ = dir.rsplit('/', 1)
+
+            url = dir + '/' + url
+        if url.startswith('//'):
+            return Url(self.scheme + ':' + url)
+        else:
+            return Url(self.scheme + '://' + self.host + \
+                       ':' + str(self.port) + url)
+
 class Text:
     def __init__(self, text, parent):
         self.text = text
@@ -188,7 +229,7 @@ class HtmlParser:
         for attr_pair in parts[1:]:
             if '=' in attr_pair:
                 key, value = attr_pair.split('=', 1)
-                if len(value) > 2 and value[0] in ["'", "\""]:
+                if len(value) > 2 and value[0] in ["'", '\"']:
                     value = value[1: -1]
                 attributes[key.casefold()] = value
             else:
@@ -382,8 +423,8 @@ class BlockLayout:
             for x, y, word, font in self.display_list:
                 cmds.append(DrawText(x, y, word, font))
 
-        bgcolor = self.node.style.get("background-color", "transparent")
-        if bgcolor != "transparent":
+        bgcolor = self.node.style.get('background-color', 'transparent')
+        if bgcolor != 'transparent':
             x2, y2 = self.x + self.width, self.y + self.height
             rect = DrawRect(self.x, self.y, x2, y2, bgcolor)
             cmds.append(rect)
@@ -454,7 +495,7 @@ class CssParser:
 
     def literal(self, literal):
         if not (self.i < len(self.s) and self.s[self.i] == literal):
-            raise Exception("Parsing error")
+            raise Exception('Parsing error')
         self.i += 1
 
     def pair(self):
@@ -540,17 +581,29 @@ class DescendantSelector:
             node = node.parent
         return False
 
-
-
-def style(node):
+def style(node, rules):
     node.style = {}
     if isinstance(node, Element) and 'style' in node.attributes:
+
+        # stylesheet parsing
+        for selector, body in rules:
+            if not selector.matches(node): continue
+            for property, value in body.items():
+                node.style[property] = value
+
+        #inline styles should come last because they override the styles in stylesheets
         pairs = CssParser(node.attributes['style']).body()
         for property, value in pairs.items():
             node.style[property] = value
 
     for child in node.children:
-        style(child)
+        style(child, rules)
+
+def tree_to_list(tree, list):
+    list.append(tree)
+    for child in tree.children:
+        tree_to_list(child, list)
+    return list
 
 def paint_tree(layout_object, display_list):
     display_list.extend(layout_object.paint())
@@ -558,11 +611,13 @@ def paint_tree(layout_object, display_list):
     for child in layout_object.children:
         paint_tree(child, display_list)
 
-
 def print_tree(node, indent=0):
     print(' ' * indent, node)
     for child in node.children:
         print_tree(child, indent+2)
+
+DEFAULT_STYLE_SHEET = CssParser(open('browser.css').read()).parse() # browser style sheet - defines default styles
+
 
 if __name__ == '__main__':
     import sys
