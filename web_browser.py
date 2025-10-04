@@ -47,21 +47,43 @@ class ElementList:
 
 class Browser:
     def __init__(self):
+        self.tabs = []
+        self.active_tab = None
         self.window = tkinter.Tk()
         self.canvas = tkinter.Canvas(self.window, width=WIDTH, height=HEIGHT, bg='white')
         self.canvas.pack()
-        self.scroll = 0
-        self.window.bind('<Down>', self.scrolldown) # self.scrolldown is an event handler
-        self.window.bind("<Button-1>", self.click) # left-click action
-        self.url = None # current page's url
+        self.window.bind('<Down>', self.handle_down) # self.scrolldown is an event handler
+        self.window.bind("<Button-1>", self.handle_click) # left-click action
 
-    def scrolldown(self, e):
-        max_y = max(self.document.height + 2 * V_STEP - HEIGHT, 0)
-        self.scroll = min(self.scroll + SCROLL_STEP, max_y)
+    def handle_down(self, e):
+        self.active_tab.scrolldown()
         self.draw()
 
-    def click(self, e):
-        x, y = e.x, e.y
+    def handle_click(self, e):
+        self.active_tab.click(e.x, e.y)
+        self.draw()
+
+    def draw(self):
+        self.canvas.delete("all")
+        self.active_tab.draw(self.canvas)
+
+    def new_tab(self, url):
+        new_tab = Tab()
+        new_tab.load(url)
+        self.active_tab = new_tab
+        self.tabs.append(new_tab)
+        self.draw()
+
+class Tab:
+    def __init__(self):
+        self.scroll = 0
+        self.url = None # current page's url
+
+    def scrolldown(self):
+        max_y = max(self.document.height + 2 * V_STEP - HEIGHT, 0)
+        self.scroll = min(self.scroll + SCROLL_STEP, max_y)
+
+    def click(self, x, y):
         y += self.scroll # we want relative y position, so add the scroll height to y
 
         # find out what the user clicked on
@@ -113,17 +135,16 @@ class Browser:
         self.display_list = []
 
         paint_tree(self.document, self.display_list)
-        self.draw()
 
-    def draw(self):
-        self.canvas.delete('all')
+    def draw(self, canvas):
+        canvas.delete('all')
 
         for cmd in self.display_list:
             if cmd.top > self.scroll + HEIGHT:
                 continue
             if cmd.bottom < self.scroll:
                 continue
-            cmd.execute(self.scroll, self.canvas)
+            cmd.execute(self.scroll, canvas)
 
 
 class Url:
@@ -699,5 +720,5 @@ DEFAULT_STYLE_SHEET = CssParser(open('browser.css').read()).parse() # browser st
 
 if __name__ == '__main__':
     import sys
-    Browser().load(Url('https://browser.engineering/chrome.html'))
+    Browser().new_tab(Url('https://browser.engineering/chrome.html'))
     tkinter.mainloop()
