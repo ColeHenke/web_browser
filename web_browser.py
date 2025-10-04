@@ -52,13 +52,36 @@ class Browser:
         self.canvas.pack()
         self.scroll = 0
         self.window.bind('<Down>', self.scrolldown) # self.scrolldown is an event handler
+        self.window.bind("<Button-1>", self.click) # left-click action
+        self.url = None # current page's url
 
     def scrolldown(self, e):
         max_y = max(self.document.height + 2 * V_STEP - HEIGHT, 0)
         self.scroll = min(self.scroll + SCROLL_STEP, max_y)
         self.draw()
 
+    def click(self, e):
+        x, y = e.x, e.y
+        y += self.scroll # we want relative y position, so add the scroll height to y
+
+        # find out what the user clicked on
+        objs = [obj for obj in tree_to_list(self.document, [])
+                if obj.x <= x < obj.x + obj.width
+                and obj.y <= y < obj.y + obj.height]
+        if not objs: return
+        elt = objs[-1].node # most specific node that was clicked
+
+        # climb up the tree to find the link element
+        while elt:
+            if isinstance(elt, Text):
+                pass
+            elif elt.tag == "a" and "href" in elt.attributes:
+                url = self.url.resolve(elt.attributes["href"])
+                return self.load(url)
+            elt = elt.parent
+
     def load(self, url):
+        self.url = url # current url
         # make request, receive response - duh
         body = url.request()
         self.nodes = HtmlParser(body).parse()
@@ -676,5 +699,5 @@ DEFAULT_STYLE_SHEET = CssParser(open('browser.css').read()).parse() # browser st
 
 if __name__ == '__main__':
     import sys
-    Browser().load(Url('https://browser.engineering/styles.html'))
+    Browser().load(Url('https://browser.engineering/chrome.html'))
     tkinter.mainloop()
