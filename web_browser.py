@@ -55,6 +55,8 @@ class Browser:
         self.window.bind('<Down>', self.handle_down) # self.scrolldown is an event handler
         self.window.bind('<Button-1>', self.handle_click) # left-click action
         self.chrome = Chrome(self)
+        self.window.bind('<Key>', self.handle_key) # fires on every keypress
+        self.window.bind('<Return>', self.handle_enter)
 
     def handle_down(self, e):
         self.active_tab.scrolldown()
@@ -66,6 +68,18 @@ class Browser:
         else:
             tab_y = e.y - self.chrome.bottom
             self.active_tab.click(e.x, tab_y)
+        self.draw()
+
+    def handle_key(self, e):
+        if len(e.char) == 0:
+            return
+        if not (0x20 <= ord(e.char) < 0x7f): # allow only ascii printable characters (32-127)
+            return
+        self.chrome.keypress(e.char)
+        self.draw()
+
+    def handle_enter(self, e):
+        self.chrome.enter()
         self.draw()
 
     def draw(self):
@@ -94,6 +108,9 @@ class Chrome:
         self.tabbar_top = 0
         self.tabbar_bottom = self.font_height + 2 * self.padding
 
+        self.focus = None
+        self.address_bar = ''
+
         # new tab button
         plus_width = self.font.measure('+') + 2 * self.padding
         self.newtab_rect = Rect(
@@ -108,7 +125,7 @@ class Chrome:
         self.bottom = self.urlbar_bottom
 
         # back button
-        back_width = self.font.measure("<") + 2 * self.padding
+        back_width = self.font.measure('<') + 2 * self.padding
         self.back_rect = Rect(
             self.padding,
             self.urlbar_top + self.padding,
@@ -170,22 +187,43 @@ class Chrome:
                     bounds.right, bounds.bottom, WIDTH, bounds.bottom,
                     'black', 1))
 
-        cmds.append(DrawOutline(self.back_rect, "black", 1))
-        cmds.append(DrawText(self.back_rect.left + self.padding, self.back_rect.top,"<", self.font, "black"))
+        cmds.append(DrawOutline(self.back_rect, 'black', 1))
+        cmds.append(DrawText(self.back_rect.left + self.padding, self.back_rect.top,'<', self.font, 'black'))
 
-        cmds.append(DrawOutline(self.address_rect, "black", 1))
+        cmds.append(DrawOutline(self.address_rect, 'black', 1))
         url = str(self.browser.active_tab.url)
-        cmds.append(DrawText(self.address_rect.left + self.padding, self.address_rect.top, url, self.font, "black"))
+        cmds.append(DrawText(self.address_rect.left + self.padding, self.address_rect.top, url, self.font, 'black'))
+
+        # draw the currently typed text
+        if self.focus == 'address bar':
+            cmds.append(DrawText(self.address_rect.left + self.padding, self.address_rect.top, self.address_bar, self.font, 'black'))
+            # add in a cursor
+            w = self.font.measure(self.address_bar)
+            cmds.append(DrawLine(self.address_rect.left + self.padding + w, self.address_rect.top, self.address_rect.left +
+                                 self.padding + w,self.address_rect.bottom, 'red', 1))
+        # draw the url
+        else:
+            url = str(self.browser.active_tab.url)
+            cmds.append(DrawText(self.address_rect.left + self.padding, self.address_rect.top, url, self.font, 'black'))
+
         return cmds
 
     def click(self, x, y):
+        self.focus = None
+
         # open new tab
         if self.newtab_rect.contains_point(x, y):
-            self.browser.new_tab(Url("https://browser.engineering/"))
+            self.browser.new_tab(Url('https://browser.engineering/'))
 
         # go back to url
         elif self.back_rect.contains_point(x, y):
             self.browser.active_tab.go_back()
+
+         # focus on addres bar when clicked
+        elif self.address_rect.contains_point(x, y):
+            self.focus = 'address bar'
+            self.address_bar = ''
+            self.browser.active_tab.url = ''
 
         # switch the current active tab
         else:
@@ -194,6 +232,14 @@ class Chrome:
                     self.browser.active_tab = tab
                     break
 
+    def keypress(self, char):
+        if self.focus == 'address bar':
+            self.address_bar += char
+
+    def enter(self):
+        if self.focus == 'address bar':
+            self.browser.active_tab.load(Url(self.address_bar))
+            self.focus = None
 
 class Tab:
     def __init__(self, tab_height):
@@ -350,12 +396,12 @@ class Url:
     # this is used to correctly format url strings in the address bar
     # it hides the port numbers on the urls
     def __str__(self):
-        port_part = ":" + str(self.port)
-        if self.scheme == "https" and self.port == 443:
-            port_part = ""
-        if self.scheme == "http" and self.port == 80:
-            port_part = ""
-        return self.scheme + "://" + self.host + port_part + self.path
+        port_part = ':' + str(self.port)
+        if self.scheme == 'https' and self.port == 443:
+            port_part = ''
+        if self.scheme == 'http' and self.port == 80:
+            port_part = ''
+        return self.scheme + '://' + self.host + port_part + self.path
 
 class Text:
     def __init__(self, text, parent):
@@ -493,6 +539,7 @@ class BlockLayout:
     def recurse(self, node):
         if isinstance(node, Text):
             for word in node.text.split():
+                # noinspection PyTypeChecker
                 self.word(node, word)
         else:
             if node.tag == 'br':
