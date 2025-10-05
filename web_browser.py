@@ -101,7 +101,26 @@ class Chrome:
             self.padding + plus_width,
             self.padding + self.font_height)
 
-        self.bottom = self.tabbar_bottom
+        # url bar
+        self.urlbar_top = self.tabbar_bottom
+        self.urlbar_bottom = self.urlbar_top + \
+                             self.font_height + 2 * self.padding
+        self.bottom = self.urlbar_bottom
+
+        # back button
+        back_width = self.font.measure("<") + 2 * self.padding
+        self.back_rect = Rect(
+            self.padding,
+            self.urlbar_top + self.padding,
+            self.padding + back_width,
+            self.urlbar_bottom - self.padding)
+
+        # address bar
+        self.address_rect = Rect(
+            self.back_rect.top + self.padding,
+            self.urlbar_top + self.padding,
+            WIDTH - self.padding,
+            self.urlbar_bottom - self.padding)
 
     # since the number of tabs can change, just compute their bounds on the go
     def tab_rect(self, i):
@@ -150,23 +169,38 @@ class Chrome:
                 cmds.append(DrawLine(
                     bounds.right, bounds.bottom, WIDTH, bounds.bottom,
                     'black', 1))
+
+        cmds.append(DrawOutline(self.back_rect, "black", 1))
+        cmds.append(DrawText(self.back_rect.left + self.padding, self.back_rect.top,"<", self.font, "black"))
+
+        cmds.append(DrawOutline(self.address_rect, "black", 1))
+        url = str(self.browser.active_tab.url)
+        cmds.append(DrawText(self.address_rect.left + self.padding, self.address_rect.top, url, self.font, "black"))
         return cmds
 
     def click(self, x, y):
-        # open new tab or switch the active tab
+        # open new tab
         if self.newtab_rect.contains_point(x, y):
             self.browser.new_tab(Url("https://browser.engineering/"))
+
+        # go back to url
+        elif self.back_rect.contains_point(x, y):
+            self.browser.active_tab.go_back()
+
+        # switch the current active tab
         else:
             for i, tab in enumerate(self.browser.tabs):
                 if self.tab_rect(i).contains_point(x, y):
                     self.browser.active_tab = tab
                     break
 
+
 class Tab:
     def __init__(self, tab_height):
         self.scroll = 0
         self.url = None # page's url
         self.tab_height = tab_height
+        self.history = []
 
     def scrolldown(self):
         max_y = max(self.document.height + 2 * V_STEP - self.tab_height, 0)
@@ -192,6 +226,7 @@ class Tab:
             elt = elt.parent
 
     def load(self, url):
+        self.history.append(url)
         self.url = url # current url
         # make request, receive response - duh
         body = url.request()
@@ -236,6 +271,11 @@ class Tab:
                 continue
             cmd.execute(self.scroll - offset, canvas)
 
+    def go_back(self):
+        if len(self.history) > 1:
+            self.history.pop()
+            back = self.history.pop()
+            self.load(back)
 
 class Url:
     def __init__(self, url):
@@ -306,6 +346,16 @@ class Url:
         else:
             return Url(self.scheme + '://' + self.host + \
                        ':' + str(self.port) + url)
+
+    # this is used to correctly format url strings in the address bar
+    # it hides the port numbers on the urls
+    def __str__(self):
+        port_part = ":" + str(self.port)
+        if self.scheme == "https" and self.port == 443:
+            port_part = ""
+        if self.scheme == "http" and self.port == 80:
+            port_part = ""
+        return self.scheme + "://" + self.host + port_part + self.path
 
 class Text:
     def __init__(self, text, parent):
