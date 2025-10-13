@@ -61,14 +61,21 @@ class Browser:
         self.window.bind('<Key>', self.handle_key) # fires on every keypress
         self.window.bind('<Return>', self.handle_enter)
 
+        self.focus = None
+
     def handle_down(self, e):
         self.active_tab.scrolldown()
         self.draw()
 
     def handle_click(self, e):
         if e.y < self.chrome.bottom:
+            self.focus = None # focus no longer in page contents
             self.chrome.click(e.x, e.y)
         else:
+            # user clicks on the webpage, transfer focus to it
+            self.focus = "content"
+            self.chrome.blur()
+
             tab_y = e.y - self.chrome.bottom
             self.active_tab.click(e.x, tab_y)
         self.draw()
@@ -78,8 +85,12 @@ class Browser:
             return
         if not (0x20 <= ord(e.char) < 0x7f): # allow only ascii printable characters (32-127)
             return
-        self.chrome.keypress(e.char)
-        self.draw()
+        # send the keypress to the address bar or input (or nothing if neither) have focus
+        if self.chrome.keypress(e.char):
+            self.draw()
+        elif self.focus == "content":
+            self.active_tab.keypress(e.char)
+            self.draw()
 
     def handle_enter(self, e):
         self.chrome.enter()
@@ -236,13 +247,18 @@ class Chrome:
                     break
 
     def keypress(self, char):
-        if self.focus == 'address bar':
+        if self.focus == "address bar":
             self.address_bar += char
+            return True # return true if the chrome consumes the key
+        return False
 
     def enter(self):
         if self.focus == 'address bar':
             self.browser.active_tab.load(Url(self.address_bar))
             self.focus = None
+
+    def blur(self):
+        self.focus = None
 
 class Tab:
     def __init__(self, tab_height):
@@ -251,12 +267,20 @@ class Tab:
         self.tab_height = tab_height
         self.history = []
 
+        # load default styles
+        self.rules = DEFAULT_STYLE_SHEET.copy()
+
+        self.nodes = []
+
+        self.focus = None # this will remember which text input we clicked on
+
     def scrolldown(self):
         max_y = max(self.document.height + 2 * V_STEP - self.tab_height, 0)
         self.scroll = min(self.scroll + SCROLL_STEP, max_y)
 
     def click(self, x, y):
         y += self.scroll # we want relative y position, so add the scroll height to y
+        self.focus = None # clear focus
 
         # find out what the user clicked on
         objs = [obj for obj in tree_to_list(self.document, [])
@@ -265,6 +289,9 @@ class Tab:
         if not objs: return
         elt = objs[-1].node # most specific node that was clicked
 
+        if self.focus:
+            self.focus.is_focused = False
+
         # climb up the tree to find the link element
         while elt:
             if isinstance(elt, Text):
@@ -272,7 +299,13 @@ class Tab:
             elif elt.tag == 'a' and 'href' in elt.attributes:
                 url = self.url.resolve(elt.attributes['href'])
                 return self.load(url)
+            elif elt.tag == 'input':
+                elt.attributes['value'] = ''
+                self.focus = elt
+                elt.is_focused = True
+                return self.render()
             elt = elt.parent
+        self.render()
 
     def load(self, url):
         self.history.append(url)
@@ -280,9 +313,6 @@ class Tab:
         # make request, receive response - duh
         body = url.request()
         self.nodes = HtmlParser(body).parse()
-
-        # load default styles
-        rules = DEFAULT_STYLE_SHEET.copy()
 
         # grab links to external stylesheets
         links = [node.attributes['href']
@@ -299,14 +329,18 @@ class Tab:
                 body = style_url.request()
             except:
                 continue
-            rules.extend(CssParser(body).parse())
+            self.rules.extend(CssParser(body).parse())
 
-        style(self.nodes, sorted(rules, key=cascade_priority))
+        style(self.nodes, sorted(self.rules, key=cascade_priority))
 
+        self.render()
+
+    # seperate styling, layout, and paint from loading
+    def render(self):
+        style(self.nodes, sorted(self.rules, key=cascade_priority))
         self.document = DocumentLayout(self.nodes)
         self.document.layout()
         self.display_list = []
-
         paint_tree(self.document, self.display_list)
 
     def draw(self, canvas, offset):
@@ -325,6 +359,12 @@ class Tab:
             self.history.pop()
             back = self.history.pop()
             self.load(back)
+
+    # add character to text entry field
+    def keypress(self, char):
+        if self.focus:
+            self.focus.attributes["value"] += char
+            self.render()
 
 class Url:
     def __init__(self, url):
@@ -411,6 +451,7 @@ class Text:
         self.text = text
         self.children = []
         self.parent = parent
+        self.is_focused = False
 
     def __repr__(self):
         return repr(self.text)
@@ -421,6 +462,7 @@ class Element:
         self.children = []
         self.parent = parent
         self.attributes = attributes
+        self.is_focused = False
 
     def __repr__(self):
         return '<' + self.tag + '>'
@@ -814,6 +856,12 @@ class InputLayout:
                 text = ''
         color = self.node.style['color']
         cmds.append(DrawText(self.x, self.y, text, self.font, color))
+
+        # draw cursor if input is focused
+        if self.node.is_focused:
+            cx = self.x + self.font.measure(text)
+            cmds.append(DrawLine(
+                cx, self.y, cx, self.y + self.height, "black", 1))
         return cmds
 
     def should_paint(self):
