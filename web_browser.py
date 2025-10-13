@@ -7,6 +7,9 @@ WIDTH, HEIGHT = 800, 600
 H_STEP, V_STEP = 13, 18
 SCROLL_STEP = 100
 
+# inputs are usually a fixed width
+INPUT_WIDTH_PX = 200
+
 FONTS = {} # for caching
 
 # since these properties are inheirited, they need default vals in case they are not specified by children
@@ -544,8 +547,11 @@ class BlockLayout:
         else:
             if node.tag == 'br':
                 self.new_line()
-            for child in node.children:
-                self.recurse(child)
+            elif node.tag == 'input' or node.tag == 'button':
+                self.input(node)
+            else:
+                for child in node.children:
+                    self.recurse(child)
 
     def word(self, node, word):
         # get the property values of for the font
@@ -610,10 +616,36 @@ class BlockLayout:
             return 'inline'
         elif any([isinstance(child, Element) and child.tag in ElementList.BLOCK_ELEMENTS for child in self.node.children]):
             return 'block'
-        elif self.node.children:
+        elif self.node.children or self.node.tag == 'input':
             return 'inline'
         else:
             return 'block'
+
+    def input(self, node):
+        w = INPUT_WIDTH_PX
+        if self.cursor_x + w > self.width:
+            self.new_line()
+        line = self.children[-1]
+        previous_word = line.children[-1] if line.children else None
+        input = InputLayout(node, line, previous_word)
+        line.children.append(input)
+
+        weight = node.style['font-weight']
+        style = node.style['font-style']
+        if style == 'normal': style = 'roman'
+        size = int(float(node.style['font-size'][:-2]) * .75)
+        font = get_font(size, weight, style)
+
+        self.cursor_x += w + font.measure(' ')
+
+    '''
+    <input> and <button> creates a BlockLayout which then creates an InputLayout inside it which paints the background
+     twice.
+     To avoid, we use this method to conditionally skip painting inside a BlockLayout.
+    '''
+    def should_paint(self):
+        return isinstance(self.node, Text) or \
+            (self.node.tag != "input" and self.node.tag != "button")
 
     def paint(self):
         cmds = []
@@ -647,6 +679,9 @@ class DocumentLayout:
 
     def paint(self):
         return []
+
+    def should_paint(self):
+        return True
 
 # this will be held within BlockLayout objects and will hold TextLayout objects
 class LineLayout:
@@ -689,6 +724,9 @@ class LineLayout:
     def paint(self):
         return []
 
+    def should_paint(self):
+        return True
+
 class TextLayout:
     def __init__(self, node, word, parent, previous):
         self.node = node
@@ -723,6 +761,66 @@ class TextLayout:
     def paint(self):
         color = self.node.style['color']
         return [DrawText(self.x, self.y, self.word, self.font, color)]
+
+    def should_paint(self):
+        return True
+
+# handle form inputs
+class InputLayout:
+    def __init__(self, node, parent, previous):
+        self.node = node
+        self.children = []
+        self.parent = parent
+        self.previous = previous
+        self.width = INPUT_WIDTH_PX # width is usually fixed
+        self.x = None
+        self.y = None
+        self.height = None
+        self.font = None
+
+    def layout(self):
+        weight = self.node.style['font-weight']
+        style = self.node.style['font-style']
+        if style == 'normal':
+            style = 'roman'
+        size = int(float(self.node.style['font-size'][:-2]) * .75)
+        self.font = get_font(size, weight, style)
+
+        if self.previous:
+            space = self.previous.font.measure(' ')
+            self.x = self.previous.x + space + self.previous.width
+        else:
+            self.x = self.parent.x
+
+        self.height = self.font.metrics('linespace')
+
+
+    def paint(self):
+        cmds = []
+        bgcolor = self.node.style.get('background-color',
+                                      'transparent')
+        if bgcolor != 'transparent':
+            rect = DrawRect(self.self_rect(), bgcolor)
+            cmds.append(rect)
+
+        if self.node.tag == 'input':
+            text = self.node.attributes.get('value', '')
+        elif self.node.tag == 'button':
+            if len(self.node.children) == 1 and \
+                    isinstance(self.node.children[0], Text):
+                text = self.node.children[0].text
+            else:
+                print('Ignoring HTML contents inside button')
+                text = ''
+        color = self.node.style['color']
+        cmds.append(DrawText(self.x, self.y, text, self.font, color))
+        return cmds
+
+    def should_paint(self):
+        return True
+
+    def self_rect(self):
+        return Rect(self.x, self.y, self.x + self.width, self.y + self.height)
 
 class Rect:
     def __init__(self, left, top, right, bottom):
@@ -931,7 +1029,8 @@ def tree_to_list(tree, list):
     return list
 
 def paint_tree(layout_object, display_list):
-    display_list.extend(layout_object.paint())
+    if layout_object.should_paint():
+        display_list.extend(layout_object.paint())
 
     for child in layout_object.children:
         paint_tree(child, display_list)
@@ -945,5 +1044,5 @@ DEFAULT_STYLE_SHEET = CssParser(open('browser.css').read()).parse() # browser st
 
 if __name__ == '__main__':
     # import sys
-    Browser().new_tab(Url('https://browser.engineering/chrome.html'))
+    Browser().new_tab(Url('https://browser.engineering/forms.html'))
     tkinter.mainloop()
