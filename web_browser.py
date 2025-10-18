@@ -427,12 +427,12 @@ class Url:
         request = '{} {} HTTP/1.0\r\n'.format(method, self.path)
         request += 'Host: {}\r\n'.format(self.host)
         if payload:
-            length = len(payload.encode("utf8"))
-            request += "Content-Length: {}\r\n".format(length)
+            length = len(payload.encode('utf8'))
+            request += 'Content-Length: {}\r\n'.format(length)
         request += '\r\n'
         if payload:
             request += payload
-        s.send(request.encode("utf8"))
+        s.send(request.encode('utf8'))
 
         response = s.makefile('r', encoding='utf8', newline='\r\n')
 
