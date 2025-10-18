@@ -1129,5 +1129,5 @@ DEFAULT_STYLE_SHEET = CssParser(open('browser.css').read()).parse() # browser st
 
 if __name__ == '__main__':
     # import sys
-    Browser().new_tab(Url('https://browser.engineering/forms.html'))
+    Browser().new_tab(Url('http://localhost:8000/'))
     tkinter.mainloop()
