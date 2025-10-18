@@ -2,6 +2,7 @@ import socket
 import ssl
 import tkinter
 import tkinter.font
+import urllib.parse
 
 WIDTH, HEIGHT = 800, 600
 H_STEP, V_STEP = 13, 18
@@ -299,6 +300,13 @@ class Tab:
             elif elt.tag == 'a' and 'href' in elt.attributes:
                 url = self.url.resolve(elt.attributes['href'])
                 return self.load(url)
+            # if a button is clicked, walk the html tree to find the form that the button is in
+            elif elt.tag == "button":
+                while elt:
+                    if elt.tag == "form" and "action" in elt.attributes:
+
+                        return self.submit_form(elt)
+                    elt = elt.parent
             elif elt.tag == 'input':
                 elt.attributes['value'] = ''
                 self.focus = elt
@@ -307,11 +315,33 @@ class Tab:
             elt = elt.parent
         self.render()
 
-    def load(self, url):
+    # find all input elements, encode them, send post request
+    def submit_form(self, elt):
+        inputs = [node for node in tree_to_list(elt, [])
+                  if isinstance(node, Element)
+                  and node.tag == "input"
+                  and "name" in node.attributes]
+
+        # key value pairs to be sent
+        body = ""
+        for input in inputs:
+            name = input.attributes["name"]
+            value = input.attributes.get("value", "")
+
+            # percent-encode the key and
+            name = urllib.parse.quote(name)
+            value = urllib.parse.quote(value)
+            body += "&" + name + "=" + value
+        body = body[1:]
+
+        url = self.url.resolve(elt.attributes["action"])
+        self.load(url, body)
+
+    def load(self, url, payload=None):
         self.history.append(url)
         self.url = url # current url
         # make request, receive response - duh
-        body = url.request()
+        body = url.request(payload)
         self.nodes = HtmlParser(body).parse()
 
         # grab links to external stylesheets
@@ -385,17 +415,24 @@ class Url:
             self.host, port = self.host.split(':', 1)
             self.port = int(port)
 
-    def request(self):
+    def request(self, payload=None):
         s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
         s.connect((self.host, self.port))
         if self.scheme == 'https':
             ctx = ssl.create_default_context()
             s = ctx.wrap_socket(s, server_hostname=self.host)
 
-        request = 'GET {} HTTP/1.0\r\n'.format(self.path)
+        method = 'POST' if payload else 'GET'
+
+        request = '{} {} HTTP/1.0\r\n'.format(method, self.path)
         request += 'Host: {}\r\n'.format(self.host)
+        if payload:
+            length = len(payload.encode("utf8"))
+            request += "Content-Length: {}\r\n".format(length)
         request += '\r\n'
-        s.send(request.encode('utf8'))
+        if payload:
+            request += payload
+        s.send(request.encode("utf8"))
 
         response = s.makefile('r', encoding='utf8', newline='\r\n')
 
