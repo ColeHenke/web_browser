@@ -50,6 +50,8 @@ class ElementList:
         'link', 'meta', 'title', 'style', 'script',
     ]
 
+RUNTIME_JS = open("test_webpage/runtime.js").read()
+
 class Browser:
     def __init__(self):
         self.tabs = []
@@ -344,6 +346,7 @@ class Tab:
         # make request, receive response - duh
         body = url.request(payload)
         self.nodes = HtmlParser(body).parse()
+        self.js = JsContext()
 
         # grab links to js files
         scripts = [node.attributes["src"] for node
@@ -360,8 +363,7 @@ class Tab:
             except:
                 continue
 
-            output = dukpy.evaljs(body)
-            print("Script returned: ", output)
+            self.js.run(body)
 
         # grab links to external stylesheets
         links = [node.attributes['href']
@@ -1121,6 +1123,15 @@ def style(node, rules):
 
     for child in node.children:
         style(child, rules)
+
+class JsContext:
+    def __init__(self):
+        self.interp = dukpy.JSInterpreter()
+        self.interp.export_function("log", print)
+        self.interp.evaljs(RUNTIME_JS)
+
+    def run(self, code):
+        return self.interp.evaljs(code)
 
 def cascade_priority(rule):
     selector, body = rule

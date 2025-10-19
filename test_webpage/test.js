@@ -1,2 +1,1 @@
-var x = 2
-x + x
+console.log('hi from js!')
