@@ -50,7 +50,7 @@ class ElementList:
         'link', 'meta', 'title', 'style', 'script',
     ]
 
-RUNTIME_JS = open("test_webpage/runtime.js").read()
+RUNTIME_JS = open('runtime.js').read()
 
 class Browser:
     def __init__(self):
@@ -77,7 +77,7 @@ class Browser:
             self.chrome.click(e.x, e.y)
         else:
             # user clicks on the webpage, transfer focus to it
-            self.focus = "content"
+            self.focus = 'content'
             self.chrome.blur()
 
             tab_y = e.y - self.chrome.bottom
@@ -92,7 +92,7 @@ class Browser:
         # send the keypress to the address bar or input (or nothing if neither) have focus
         if self.chrome.keypress(e.char):
             self.draw()
-        elif self.focus == "content":
+        elif self.focus == 'content':
             self.active_tab.keypress(e.char)
             self.draw()
 
@@ -251,7 +251,7 @@ class Chrome:
                     break
 
     def keypress(self, char):
-        if self.focus == "address bar":
+        if self.focus == 'address bar':
             self.address_bar += char
             return True # return true if the chrome consumes the key
         return False
@@ -304,9 +304,9 @@ class Tab:
                 url = self.url.resolve(elt.attributes['href'])
                 return self.load(url)
             # if a button is clicked, walk the html tree to find the form that the button is in
-            elif elt.tag == "button":
+            elif elt.tag == 'button':
                 while elt:
-                    if elt.tag == "form" and "action" in elt.attributes:
+                    if elt.tag == 'form' and 'action' in elt.attributes:
 
                         return self.submit_form(elt)
                     elt = elt.parent
@@ -322,22 +322,22 @@ class Tab:
     def submit_form(self, elt):
         inputs = [node for node in tree_to_list(elt, [])
                   if isinstance(node, Element)
-                  and node.tag == "input"
-                  and "name" in node.attributes]
+                  and node.tag == 'input'
+                  and 'name' in node.attributes]
 
         # key value pairs to be sent
-        body = ""
+        body = ''
         for input in inputs:
-            name = input.attributes["name"]
-            value = input.attributes.get("value", "")
+            name = input.attributes['name']
+            value = input.attributes.get('value', '')
 
             # percent-encode the key and
             name = urllib.parse.quote(name)
             value = urllib.parse.quote(value)
-            body += "&" + name + "=" + value
+            body += '&' + name + '=' + value
         body = body[1:]
 
-        url = self.url.resolve(elt.attributes["action"])
+        url = self.url.resolve(elt.attributes['action'])
         self.load(url, body)
 
     def load(self, url, payload=None):
@@ -349,11 +349,11 @@ class Tab:
         self.js = JsContext(self)
 
         # grab links to js files
-        scripts = [node.attributes["src"] for node
+        scripts = [node.attributes['src'] for node
                    in tree_to_list(self.nodes, [])
                    if isinstance(node, Element)
-                   and node.tag == "script"
-                   and "src" in node.attributes]
+                   and node.tag == 'script'
+                   and 'src' in node.attributes]
 
         # run all the scripts
         for script in scripts:
@@ -414,7 +414,7 @@ class Tab:
     # add character to text entry field
     def keypress(self, char):
         if self.focus:
-            self.focus.attributes["value"] += char
+            self.focus.attributes['value'] += char
             self.render()
 
 class Url:
@@ -745,7 +745,7 @@ class BlockLayout:
     '''
     def should_paint(self):
         return isinstance(self.node, Text) or \
-            (self.node.tag != "input" and self.node.tag != "button")
+            (self.node.tag != 'input' and self.node.tag != 'button')
 
     def paint(self):
         cmds = []
@@ -919,7 +919,7 @@ class InputLayout:
         if self.node.is_focused:
             cx = self.x + self.font.measure(text)
             cmds.append(DrawLine(
-                cx, self.y, cx, self.y + self.height, "black", 1))
+                cx, self.y, cx, self.y + self.height, 'black', 1))
         return cmds
 
     def should_paint(self):
@@ -1128,8 +1128,9 @@ class JsContext:
     def __init__(self, tab):
         self.tab = tab
         self.interp = dukpy.JSInterpreter()
-        self.interp.export_function("log", print)
-        self.interp.export_function("querySelectorAll", self.querySelectorAll)
+        self.interp.export_function('log', print)
+        self.interp.export_function('querySelectorAll', self.querySelectorAll)
+        self.interp.export_function('getAttribute', self.getAttribute)
 
         # handle-to-node map (js to python)
         self.node_to_handle = {}
@@ -1143,6 +1144,11 @@ class JsContext:
         nodes = [node for node in tree_to_list(self.tab.nodes, []) if selector.matches(node)]
 
         return [self.get_handle(node) for node in nodes]
+
+    def getAttribute(self, handle, attr):
+        elt = self.handle_to_node[handle]
+        attr = elt.attributes.get(attr, None)
+        return attr if attr else ''
 
     def get_handle(self, elt):
         if elt not in self.node_to_handle:
@@ -1158,7 +1164,7 @@ class JsContext:
         try:
             return self.interp.evaljs(code)
         except dukpy.JSRuntimeError as e:
-            print("Script", script, "crashed", e)
+            print('Script', script, 'crashed', e)
 
 def cascade_priority(rule):
     selector, body = rule
