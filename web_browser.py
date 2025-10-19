@@ -50,7 +50,9 @@ class ElementList:
         'link', 'meta', 'title', 'style', 'script',
     ]
 
+# js constants
 RUNTIME_JS = open('runtime.js').read()
+EVENT_DISPATCH_JS = 'new Node(dukpy.handle).dispatchEvent(dukpy.type)'
 
 class Browser:
     def __init__(self):
@@ -301,16 +303,19 @@ class Tab:
             if isinstance(elt, Text):
                 pass
             elif elt.tag == 'a' and 'href' in elt.attributes:
+                self.js.dispatch_event('click', elt)
                 url = self.url.resolve(elt.attributes['href'])
                 return self.load(url)
             # if a button is clicked, walk the html tree to find the form that the button is in
             elif elt.tag == 'button':
+                self.js.dispatch_event('click', elt)
                 while elt:
                     if elt.tag == 'form' and 'action' in elt.attributes:
 
                         return self.submit_form(elt)
                     elt = elt.parent
             elif elt.tag == 'input':
+                self.js.dispatch_event('click', elt)
                 elt.attributes['value'] = ''
                 self.focus = elt
                 elt.is_focused = True
@@ -320,6 +325,8 @@ class Tab:
 
     # find all input elements, encode them, send post request
     def submit_form(self, elt):
+        self.js.dispatch_event('submit', elt)
+
         inputs = [node for node in tree_to_list(elt, [])
                   if isinstance(node, Element)
                   and node.tag == 'input'
@@ -386,7 +393,7 @@ class Tab:
 
         self.render()
 
-    # seperate styling, layout, and paint from loading
+    # separate styling, layout, and paint from loading
     def render(self):
         style(self.nodes, sorted(self.rules, key=cascade_priority))
         self.document = DocumentLayout(self.nodes)
@@ -414,6 +421,7 @@ class Tab:
     # add character to text entry field
     def keypress(self, char):
         if self.focus:
+            self.js.dispatch_event('keydown', self.focus)
             self.focus.attributes['value'] += char
             self.render()
 
@@ -1158,6 +1166,10 @@ class JsContext:
         else:
             handle = self.node_to_handle[elt]
         return handle
+
+    def dispatch_event(self, type, elt):
+        handle = self.node_to_handle.get(elt, -1)
+        self.interp.evaljs(EVENT_DISPATCH_JS, type=type, handle=handle)
 
     # don't allow js crashes to take the browser with it
     def run(self, script, code):
