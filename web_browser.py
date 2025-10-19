@@ -52,7 +52,7 @@ class ElementList:
 
 # js constants
 RUNTIME_JS = open('runtime.js').read()
-EVENT_DISPATCH_JS = 'new Node(dukpy.handle).dispatchEvent(dukpy.type)'
+EVENT_DISPATCH_JS = 'new Node(dukpy.handle).dispatchEvent(new Event(dukpy.type))'
 
 class Browser:
     def __init__(self):
@@ -303,19 +303,21 @@ class Tab:
             if isinstance(elt, Text):
                 pass
             elif elt.tag == 'a' and 'href' in elt.attributes:
-                self.js.dispatch_event('click', elt)
+                if self.js.dispatch_event("click", elt):
+                    return None
                 url = self.url.resolve(elt.attributes['href'])
                 return self.load(url)
             # if a button is clicked, walk the html tree to find the form that the button is in
             elif elt.tag == 'button':
-                self.js.dispatch_event('click', elt)
+                if self.js.dispatch_event("click", elt):
+                    return None
                 while elt:
                     if elt.tag == 'form' and 'action' in elt.attributes:
-
                         return self.submit_form(elt)
                     elt = elt.parent
             elif elt.tag == 'input':
-                self.js.dispatch_event('click', elt)
+                if self.js.dispatch_event("click", elt):
+                    return None
                 elt.attributes['value'] = ''
                 self.focus = elt
                 elt.is_focused = True
@@ -325,7 +327,8 @@ class Tab:
 
     # find all input elements, encode them, send post request
     def submit_form(self, elt):
-        self.js.dispatch_event('submit', elt)
+        if self.js.dispatch_event("submit", elt):
+            return
 
         inputs = [node for node in tree_to_list(elt, [])
                   if isinstance(node, Element)
@@ -421,7 +424,8 @@ class Tab:
     # add character to text entry field
     def keypress(self, char):
         if self.focus:
-            self.js.dispatch_event('keydown', self.focus)
+            if self.js.dispatch_event("keydown", self.focus):
+                return
             self.focus.attributes['value'] += char
             self.render()
 
@@ -1169,7 +1173,7 @@ class JsContext:
         return handle
 
     def innerHTML_set(self, handle, s):
-        doc = HtmlParser("<html><body>" + s + "</body></html>").parse()
+        doc = HtmlParser('<html><body>' + s + '</body></html>').parse()
         new_nodes = doc.children[0].children
         elt = self.handle_to_node[handle]
         elt.children = new_nodes
@@ -1180,7 +1184,8 @@ class JsContext:
 
     def dispatch_event(self, type, elt):
         handle = self.node_to_handle.get(elt, -1)
-        self.interp.evaljs(EVENT_DISPATCH_JS, type=type, handle=handle)
+        do_default = self.interp.evaljs(EVENT_DISPATCH_JS, type=type, handle=handle)
+        return not do_default
 
     # don't allow js crashes to take the browser with it
     def run(self, script, code):

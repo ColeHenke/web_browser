@@ -38,12 +38,14 @@ Node.prototype.addEventListener = function(type, listener) {
 }
 
 // look for the type and handle of the event in the listeners array
-Node.prototype.dispatchEvent = function(type) {
+Node.prototype.dispatchEvent = function(evt) {
+    var type = evt.type;
     var handle = this.handle;
     var list = (LISTENERS[handle] && LISTENERS[handle][type]) || [];
     for (var i = 0; i < list.length; i++) {
-        list[i].call(this); // sets the value of 'this' inside the function
+        list[i].call(this, evt); // sets the value of 'this' inside the function
     }
+    return evt.do_default;
 }
 
 Object.defineProperty(Node.prototype, 'innerHTML', {
@@ -51,3 +53,12 @@ Object.defineProperty(Node.prototype, 'innerHTML', {
         call_python('innerHTML_set', this.handle, s.toString());
     }
 });
+
+function Event(type) {
+    this.type = type
+    this.do_default = true;
+}
+
+Event.prototype.preventDefault = function() {
+    this.do_default = false;
+}
