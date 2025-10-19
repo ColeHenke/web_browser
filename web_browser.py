@@ -363,7 +363,7 @@ class Tab:
             except:
                 continue
 
-            self.js.run(body)
+            self.js.run(script, body)
 
         # grab links to external stylesheets
         links = [node.attributes['href']
@@ -1130,8 +1130,12 @@ class JsContext:
         self.interp.export_function("log", print)
         self.interp.evaljs(RUNTIME_JS)
 
-    def run(self, code):
-        return self.interp.evaljs(code)
+    # don't allow js crashes to take the browser with it
+    def run(self, script, code):
+        try:
+            return self.interp.evaljs(code)
+        except dukpy.JSRuntimeError as e:
+            print("Script", script, "crashed", e)
 
 def cascade_priority(rule):
     selector, body = rule
