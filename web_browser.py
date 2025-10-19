@@ -273,10 +273,10 @@ class Tab:
 
         # load default styles
         self.rules = DEFAULT_STYLE_SHEET.copy()
-
         self.nodes = []
-
         self.focus = None # this will remember which text input we clicked on
+
+        self.js = None
 
     def scrolldown(self):
         max_y = max(self.document.height + 2 * V_STEP - self.tab_height, 0)
@@ -346,7 +346,7 @@ class Tab:
         # make request, receive response - duh
         body = url.request(payload)
         self.nodes = HtmlParser(body).parse()
-        self.js = JsContext()
+        self.js = JsContext(self)
 
         # grab links to js files
         scripts = [node.attributes["src"] for node
@@ -1125,10 +1125,33 @@ def style(node, rules):
         style(child, rules)
 
 class JsContext:
-    def __init__(self):
+    def __init__(self, tab):
+        self.tab = tab
         self.interp = dukpy.JSInterpreter()
         self.interp.export_function("log", print)
+        self.interp.export_function("querySelectorAll", self.querySelectorAll)
+
+        # handle-to-node map (js to python)
+        self.node_to_handle = {}
+        self.handle_to_node = {}
+
         self.interp.evaljs(RUNTIME_JS)
+
+    def querySelectorAll(self, selector_text):
+        selector = CssParser(selector_text).selector()
+
+        nodes = [node for node in tree_to_list(self.tab.nodes, []) if selector.matches(node)]
+
+        return [self.get_handle(node) for node in nodes]
+
+    def get_handle(self, elt):
+        if elt not in self.node_to_handle:
+            handle = len(self.node_to_handle)
+            self.node_to_handle[elt] = handle
+            self.handle_to_node[handle] = elt
+        else:
+            handle = self.node_to_handle[elt]
+        return handle
 
     # don't allow js crashes to take the browser with it
     def run(self, script, code):
