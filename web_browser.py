@@ -3,6 +3,7 @@ import ssl
 import tkinter
 import tkinter.font
 import urllib.parse
+import dukpy
 
 WIDTH, HEIGHT = 800, 600
 H_STEP, V_STEP = 13, 18
@@ -343,6 +344,24 @@ class Tab:
         # make request, receive response - duh
         body = url.request(payload)
         self.nodes = HtmlParser(body).parse()
+
+        # grab links to js files
+        scripts = [node.attributes["src"] for node
+                   in tree_to_list(self.nodes, [])
+                   if isinstance(node, Element)
+                   and node.tag == "script"
+                   and "src" in node.attributes]
+
+        # run all the scripts
+        for script in scripts:
+            script_url = url.resolve(script)
+            try:
+                body = script_url.request()
+            except:
+                continue
+
+            output = dukpy.evaljs(body)
+            print("Script returned: ", output)
 
         # grab links to external stylesheets
         links = [node.attributes['href']
