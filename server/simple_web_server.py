@@ -1,5 +1,9 @@
 import socket
 import urllib.parse
+import random
+
+# store info about each user/client
+SESSIONS = {}
 
 def handle_connection(conx):
     # read the request line
@@ -17,6 +21,12 @@ def handle_connection(conx):
         header, value = line.split(':', 1)
         headers[header.casefold()] = value.strip()
 
+    # grab cookie if it is available
+    if "cookie" in headers:
+        token = headers["cookie"][len("token="):]
+    else:
+        token = str(random.random())[2:]
+
     # read the body if it exists
     if 'content-length' in headers:
         length = int(headers['content-length'])
@@ -24,17 +34,21 @@ def handle_connection(conx):
     else:
         body = None
 
-    status, body = do_request(method, url, headers, body)
+    session = SESSIONS.setdefault(token, {})
+    status, body = do_request(session, method, url, headers, body)
 
     # send the page back to the browser
     response = 'HTTP/1.0 {}\r\n'.format(status)
     response += 'Content-Length: {}\r\n'.format(len(body.encode('utf8')))
+    if "cookie" not in headers:
+        template = "Set-Cookie: token={}\r\n"
+        response += template.format(token)
     response += '\r\n' + body
     conx.send(response.encode('utf8'))
     conx.close()
 
 # output html to show the entries
-def show_comments():
+def show_comments(session):
     out = '<!doctype html>'
     out += '<head>'
     out += '<link rel=stylesheet href=/comment.css>'
@@ -53,9 +67,9 @@ def show_comments():
     return out
 
 # decide how to respond based on the request type
-def do_request(method, url, headers, body):
+def do_request(session, method, url, headers, body):
     if method == 'GET' and url == '/':
-        return '200 OK', show_comments()
+        return '200 OK', show_comments(session)
     elif method == 'GET' and url == '/comment.js':
         with open('comment.js') as f:
             return '200 OK', f.read()
@@ -64,7 +78,7 @@ def do_request(method, url, headers, body):
             return '200 OK', f.read()
     elif method == 'POST' and url == '/add':
         params = form_decode(body)
-        return '200 OK', add_entry(params)
+        return '200 OK', add_entry(session, params)
     else:
         return '404 Not Found', not_found(url, method)
 
@@ -79,10 +93,10 @@ def form_decode(body):
         params[name] = value
     return params
 
-def add_entry(params):
+def add_entry(session, params):
     if 'guest' in params and len(params['guest']) <= 10:
         ENTRIES.append(params['guest'])
-    return show_comments()
+    return show_comments(session)
 
 def not_found(url, method):
     out = '<!doctype html>'
