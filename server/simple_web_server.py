@@ -5,6 +5,12 @@ import random
 # store info about each user/client
 SESSIONS = {}
 
+# hardcoded for convenience
+LOGINS = {
+    'crashoverride': '0cool',
+    'cerealkiller': 'emmanuel'
+}
+
 def handle_connection(conx):
     # read the request line
     req = conx.makefile('b')
@@ -22,8 +28,8 @@ def handle_connection(conx):
         headers[header.casefold()] = value.strip()
 
     # grab cookie if it is available
-    if "cookie" in headers:
-        token = headers["cookie"][len("token="):]
+    if 'cookie' in headers:
+        token = headers['cookie'][len('token='):]
     else:
         token = str(random.random())[2:]
 
@@ -40,8 +46,8 @@ def handle_connection(conx):
     # send the page back to the browser
     response = 'HTTP/1.0 {}\r\n'.format(status)
     response += 'Content-Length: {}\r\n'.format(len(body.encode('utf8')))
-    if "cookie" not in headers:
-        template = "Set-Cookie: token={}\r\n"
+    if 'cookie' not in headers:
+        template = 'Set-Cookie: token={}\r\n'
         response += template.format(token)
     response += '\r\n' + body
     conx.send(response.encode('utf8'))
@@ -53,16 +59,21 @@ def show_comments(session):
     out += '<head>'
     out += '<link rel=stylesheet href=/comment.css>'
     out += '</head>'
-    for entry in ENTRIES:
-        out += '<p>' + entry + '</p>'
+    for entry, who in ENTRIES:
+        out += '<p>' + entry + '\n'
+        out += '<i>by ' + who + '</i></p>'
 
     out += '<strong></strong>'
 
     out += '<br>'
-    out += '<form action=add method=post>'
-    out += '<p><input name=guest></p>'
-    out += '<p><button>Sign the book!</button></p>'
-    out += '</form>'
+    if 'user' in session:
+        out += '<h1>Hello, ' + session['user'] + '</h1>'
+        out += '<form action=add method=post>'
+        out += '<p><input name=guest></p>'
+        out += '<p><button>Sign the book!</button></p>'
+        out += '</form>'
+    else:
+        out += '<a href=/login>Sign in to write in the guest book</a>'
     out += '<script src=/comment.js></script>'
     return out
 
@@ -76,9 +87,15 @@ def do_request(session, method, url, headers, body):
     elif method == 'GET' and url == '/comment.css':
         with open('comment.css') as f:
             return '200 OK', f.read()
+    elif method == 'GET' and url == '/login':
+        return '200 OK', login_form(session)
+    elif method == 'POST' and url == '/':
+        params = form_decode(body)
+        return do_login(session, params)
     elif method == 'POST' and url == '/add':
         params = form_decode(body)
-        return '200 OK', add_entry(session, params)
+        add_entry(session, params)
+        return '200 OK', show_comments(session)
     else:
         return '404 Not Found', not_found(url, method)
 
@@ -94,16 +111,40 @@ def form_decode(body):
     return params
 
 def add_entry(session, params):
-    if 'guest' in params and len(params['guest']) <= 10:
-        ENTRIES.append(params['guest'])
-    return show_comments(session)
+    if 'user' not in session:
+        return
+    if 'guest' in params and len(params['guest']) <= 100:
+        ENTRIES.append((params['guest'], session['user']))
+
+def login_form(session):
+    body = '<!doctype html>'
+    body += '<form action=/ method=post>'
+    body += '<p>Username: <input name=username></p>'
+    body += '<p>Password: <input name=password type=password></p>'
+    body += '<p><button>Log in</button></p>'
+    body += '</form>'
+    return body
+
+def do_login(session, params):
+    username = params.get('username')
+    password = params.get('password')
+    if username in LOGINS and LOGINS[username] == password:
+        session['user'] = username
+        return '200 OK', show_comments(session)
+    else:
+        out = '<!doctype html>'
+        out += '<h1>Invalid password for {}</h1>'.format(username)
+        return '401 Unauthorized', out
 
 def not_found(url, method):
     out = '<!doctype html>'
     out += '<h1>{} {} not found!</h1>'.format(method, url)
     return out
 
-ENTRIES = [ 'Pavel was here' ]
+ENTRIES = [
+    ('No names. We are nameless!', 'cerealkiller'),
+    ('HACK THE PLANET!!!', 'crashoverride'),
+]
 
 s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
 
