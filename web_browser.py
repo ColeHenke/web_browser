@@ -22,6 +22,8 @@ INHERITED_PROPERTIES = {
     'color': 'black',
 }
 
+COOKIE_JAR = {}
+
 def get_font(size, weight, style):
     key = (size, weight, style)
     if key not in FONTS:
@@ -459,6 +461,9 @@ class Url:
 
         request = '{} {} HTTP/1.0\r\n'.format(method, self.path)
         request += 'Host: {}\r\n'.format(self.host)
+        if self.host in COOKIE_JAR:
+            cookie = COOKIE_JAR[self.host]
+            request += "Cookie: {}\r\n".format(cookie)
         if payload:
             length = len(payload.encode('utf8'))
             request += 'Content-Length: {}\r\n'.format(length)
@@ -482,6 +487,10 @@ class Url:
 
         assert 'transfer-encoding' not in response_headers
         assert 'content-encoding' not in response_headers
+
+        if "set-cookie" in response_headers:
+            cookie = response_headers["set-cookie"]
+            COOKIE_JAR[self.host] = cookie
 
         content = response.read()
         s.close()
