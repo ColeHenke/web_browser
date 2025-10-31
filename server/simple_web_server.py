@@ -1,6 +1,7 @@
 import socket
 import urllib.parse
 import random
+import html
 
 # store info about each user/client
 SESSIONS = {}
@@ -60,15 +61,18 @@ def show_comments(session):
     out += '<link rel=stylesheet href=/comment.css>'
     out += '</head>'
     for entry, who in ENTRIES:
-        out += '<p>' + entry + '\n'
-        out += '<i>by ' + who + '</i></p>'
+        out += '<p>' + html.escape(entry) + '\n'
+        out += '<i>by ' + html.escape(who) + '</i></p>'
 
     out += '<strong></strong>'
 
     out += '<br>'
     if 'user' in session:
+        nonce = str(random.random())[2:]
+        session['nonce'] = nonce
         out += '<h1>Hello, ' + session['user'] + '</h1>'
         out += '<form action=add method=post>'
+        out += '<input name=nonce type=hidden value=' + nonce + '>'
         out += '<p><input name=guest></p>'
         out += '<p><button>Sign the book!</button></p>'
         out += '</form>'
@@ -111,6 +115,8 @@ def form_decode(body):
     return params
 
 def add_entry(session, params):
+    if 'nonce' not in session or 'nonce' not in params: return
+    if session['nonce'] != params['nonce']: return
     if 'user' not in session:
         return
     if 'guest' in params and len(params['guest']) <= 100:

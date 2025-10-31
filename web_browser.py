@@ -353,10 +353,10 @@ class Tab:
         self.load(url, body)
 
     def load(self, url, payload=None):
+        # make request, receive response - duh
+        headers, body = url.request(self.url, payload)
         self.history.append(url)
         self.url = url # current url
-        # make request, receive response - duh
-        body = url.request(payload)
         self.nodes = HtmlParser(body).parse()
         self.js = JsContext(self)
 
@@ -371,7 +371,7 @@ class Tab:
         for script in scripts:
             script_url = url.resolve(script)
             try:
-                body = script_url.request()
+                headers, body = script_url.request(url)
             except:
                 continue
 
@@ -389,7 +389,7 @@ class Tab:
         for link in links:
             style_url = url.resolve(link)
             try:
-                body = style_url.request()
+                headers, body = style_url.request(url)
             except:
                 continue
             self.rules.extend(CssParser(body).parse())
@@ -450,7 +450,7 @@ class Url:
             self.host, port = self.host.split(':', 1)
             self.port = int(port)
 
-    def request(self, payload=None):
+    def request(self, referrer, payload=None):
         s = socket.socket(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
         s.connect((self.host, self.port))
         if self.scheme == 'https':
@@ -462,8 +462,13 @@ class Url:
         request = '{} {} HTTP/1.0\r\n'.format(method, self.path)
         request += 'Host: {}\r\n'.format(self.host)
         if self.host in COOKIE_JAR:
-            cookie = COOKIE_JAR[self.host]
-            request += 'Cookie: {}\r\n'.format(cookie)
+            cookie, params = COOKIE_JAR[self.host]
+            allow_cookie = True
+            if referrer and params.get("samesite", "none") == "lax":
+                if method != "GET":
+                    allow_cookie = self.host == referrer.host
+            if allow_cookie:
+                request += 'Cookie: {}\r\n'.format(cookie)
         if payload:
             length = len(payload.encode('utf8'))
             request += 'Content-Length: {}\r\n'.format(length)
@@ -490,7 +495,16 @@ class Url:
 
         if 'set-cookie' in response_headers:
             cookie = response_headers['set-cookie']
-            COOKIE_JAR[self.host] = cookie
+            params = {}
+            if ";" in cookie:
+                cookie, rest = cookie.split(";", 1)
+                for param in rest.split(";"):
+                    if '=' in param:
+                        param, value = param.split("=", 1)
+                    else:
+                        value = "true"
+                    params[param.strip().casefold()] = value.casefold()
+            COOKIE_JAR[self.host] = (cookie, params)
 
         content = response.read()
         s.close()
@@ -1198,7 +1212,7 @@ class JsContext:
         full_url = self.tab.url.resolve(url)
         if full_url.origin() != self.tab.url.origin():
             raise Exception('Cross-origin XHR request not allowed')
-        headers, out = full_url.request(body)
+        headers, out = full_url.request(self.tab.url, body)
         return out
 
     def dispatch_event(self, type, elt):
