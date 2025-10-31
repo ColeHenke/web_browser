@@ -305,20 +305,20 @@ class Tab:
             if isinstance(elt, Text):
                 pass
             elif elt.tag == 'a' and 'href' in elt.attributes:
-                if self.js.dispatch_event("click", elt):
+                if self.js.dispatch_event('click', elt):
                     return None
                 url = self.url.resolve(elt.attributes['href'])
                 return self.load(url)
             # if a button is clicked, walk the html tree to find the form that the button is in
             elif elt.tag == 'button':
-                if self.js.dispatch_event("click", elt):
+                if self.js.dispatch_event('click', elt):
                     return None
                 while elt:
                     if elt.tag == 'form' and 'action' in elt.attributes:
                         return self.submit_form(elt)
                     elt = elt.parent
             elif elt.tag == 'input':
-                if self.js.dispatch_event("click", elt):
+                if self.js.dispatch_event('click', elt):
                     return None
                 elt.attributes['value'] = ''
                 self.focus = elt
@@ -329,7 +329,7 @@ class Tab:
 
     # find all input elements, encode them, send post request
     def submit_form(self, elt):
-        if self.js.dispatch_event("submit", elt):
+        if self.js.dispatch_event('submit', elt):
             return
 
         inputs = [node for node in tree_to_list(elt, [])
@@ -426,7 +426,7 @@ class Tab:
     # add character to text entry field
     def keypress(self, char):
         if self.focus:
-            if self.js.dispatch_event("keydown", self.focus):
+            if self.js.dispatch_event('keydown', self.focus):
                 return
             self.focus.attributes['value'] += char
             self.render()
@@ -463,7 +463,7 @@ class Url:
         request += 'Host: {}\r\n'.format(self.host)
         if self.host in COOKIE_JAR:
             cookie = COOKIE_JAR[self.host]
-            request += "Cookie: {}\r\n".format(cookie)
+            request += 'Cookie: {}\r\n'.format(cookie)
         if payload:
             length = len(payload.encode('utf8'))
             request += 'Content-Length: {}\r\n'.format(length)
@@ -488,8 +488,8 @@ class Url:
         assert 'transfer-encoding' not in response_headers
         assert 'content-encoding' not in response_headers
 
-        if "set-cookie" in response_headers:
-            cookie = response_headers["set-cookie"]
+        if 'set-cookie' in response_headers:
+            cookie = response_headers['set-cookie']
             COOKIE_JAR[self.host] = cookie
 
         content = response.read()
@@ -526,7 +526,7 @@ class Url:
         return self.scheme + '://' + self.host + port_part + self.path
 
     def origin(self):
-        return self.scheme + "://" + self.host + ":" + str(self.port)
+        return self.scheme + '://' + self.host + ':' + str(self.port)
 
 class Text:
     def __init__(self, text, parent):
@@ -1197,7 +1197,7 @@ class JsContext:
     def XMLHttpRequest_send(self, method, url, body):
         full_url = self.tab.url.resolve(url)
         if full_url.origin() != self.tab.url.origin():
-            raise Exception("Cross-origin XHR request not allowed")
+            raise Exception('Cross-origin XHR request not allowed')
         headers, out = full_url.request(body)
         return out
 
