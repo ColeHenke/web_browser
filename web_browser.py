@@ -525,6 +525,9 @@ class Url:
             port_part = ''
         return self.scheme + '://' + self.host + port_part + self.path
 
+    def origin(self):
+        return self.scheme + "://" + self.host + ":" + str(self.port)
+
 class Text:
     def __init__(self, text, parent):
         self.text = text
@@ -1190,6 +1193,13 @@ class JsContext:
             child.parent = elt
 
         self.tab.render()
+
+    def XMLHttpRequest_send(self, method, url, body):
+        full_url = self.tab.url.resolve(url)
+        if full_url.origin() != self.tab.url.origin():
+            raise Exception("Cross-origin XHR request not allowed")
+        headers, out = full_url.request(body)
+        return out
 
     def dispatch_event(self, type, elt):
         handle = self.node_to_handle.get(elt, -1)
