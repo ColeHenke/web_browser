@@ -279,8 +279,8 @@ class Tab:
         self.rules = DEFAULT_STYLE_SHEET.copy()
         self.nodes = []
         self.focus = None # this will remember which text input we clicked on
-
         self.js = None
+        self.allowed_origins = None
 
     def scrolldown(self):
         max_y = max(self.document.height + 2 * V_STEP - self.tab_height, 0)
@@ -359,6 +359,14 @@ class Tab:
         self.url = url # current url
         self.nodes = HtmlParser(body).parse()
         self.js = JsContext(self)
+        self.allowed_origins = None
+
+        if "content-security-policy" in headers:
+            csp = headers["content-security-policy"].split()
+            if len(csp) > 0 and csp[0] == "default-src":
+                self.allowed_origins = []
+                for origin in csp[1:]:
+                    self.allowed_origins.append(Url(origin).origin())
 
         # grab links to js files
         scripts = [node.attributes['src'] for node
@@ -370,8 +378,11 @@ class Tab:
         # run all the scripts
         for script in scripts:
             script_url = url.resolve(script)
+            if not self.allowed_request(script_url):
+                print("Blocked script", script, "due to CSP")
+                continue
             try:
-                headers, body = script_url.request(url)
+                header, body = script_url.request(url)
             except:
                 continue
 
@@ -388,8 +399,11 @@ class Tab:
         # add rules from linked stylesheets to rules list
         for link in links:
             style_url = url.resolve(link)
+            if not self.allowed_request(style_url):
+                print("Blocked script", link, "due to CSP")
+                continue
             try:
-                headers, body = style_url.request(url)
+                header, body = style_url.request(url)
             except:
                 continue
             self.rules.extend(CssParser(body).parse())
@@ -431,6 +445,10 @@ class Tab:
             self.focus.attributes['value'] += char
             self.render()
 
+    def allowed_request(self, url):
+        return self.allowed_origins is None or \
+            url.origin() in self.allowed_origins
+
 class Url:
     def __init__(self, url):
         self.scheme, url = url.split('://', 1)
@@ -464,8 +482,8 @@ class Url:
         if self.host in COOKIE_JAR:
             cookie, params = COOKIE_JAR[self.host]
             allow_cookie = True
-            if referrer and params.get("samesite", "none") == "lax":
-                if method != "GET":
+            if referrer and params.get('samesite', 'none') == 'lax':
+                if method != 'GET':
                     allow_cookie = self.host == referrer.host
             if allow_cookie:
                 request += 'Cookie: {}\r\n'.format(cookie)
@@ -496,20 +514,20 @@ class Url:
         if 'set-cookie' in response_headers:
             cookie = response_headers['set-cookie']
             params = {}
-            if ";" in cookie:
-                cookie, rest = cookie.split(";", 1)
-                for param in rest.split(";"):
+            if ';' in cookie:
+                cookie, rest = cookie.split(';', 1)
+                for param in rest.split(';'):
                     if '=' in param:
-                        param, value = param.split("=", 1)
+                        param, value = param.split('=', 1)
                     else:
-                        value = "true"
+                        value = 'true'
                     params[param.strip().casefold()] = value.casefold()
             COOKIE_JAR[self.host] = (cookie, params)
 
         content = response.read()
         s.close()
 
-        return content
+        return response_headers, content
 
     # convert different kinds of urls to full urls
     def resolve(self, url):
@@ -1210,6 +1228,8 @@ class JsContext:
 
     def XMLHttpRequest_send(self, method, url, body):
         full_url = self.tab.url.resolve(url)
+        if not self.tab.allowed_request(full_url):
+            raise Exception("Cross-origin XHR blocked by CSP")
         if full_url.origin() != self.tab.url.origin():
             raise Exception('Cross-origin XHR request not allowed')
         headers, out = full_url.request(self.tab.url, body)
